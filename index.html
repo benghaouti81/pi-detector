@@ -74,7 +74,7 @@
         // --- وظيفة الاتصال USB ---
         async function connectUSB() {
             try {
-                port = await navigator.serial.requestPort();
+                port = await navigator.serial.requestPort({ filters: [] });
                 await port.open({ baudRate: 115200 });
                 document.getElementById('status').innerText = "🟢 متصل";
                 document.getElementById('status').style.color = "#00e676";
