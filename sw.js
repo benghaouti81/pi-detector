@@ -3,7 +3,7 @@ const ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  'https://cdn.jsdelivr.net/npm/chart.js' // سيقوم بحفظ المكتبة تلقائياً
+  './chart.js'  // <-- هنا التغيير، أصبح محلياً
 ];
 
 self.addEventListener('install', (e) => {
