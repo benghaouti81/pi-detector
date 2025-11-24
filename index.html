@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PI Detector Pro</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e1e1e">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background: #121212; color: #fff; font-family: sans-serif; margin: 0; padding: 10px; overflow: hidden; }
+        .header { display: flex; justify-content: space-between; align-items: center; background: #1e1e1e; padding: 10px; border-radius: 10px; margin-bottom: 10px; }
+        .btn { background: #00e676; border: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        .btn.danger { background: #ff1744; color: #fff; }
+        .readings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+        .box { background: #1e1e1e; padding: 15px; text-align: center; border-radius: 10px; border: 1px solid #333; }
+        .val { font-size: 2em; font-weight: bold; color: #00e676; }
+        .label { color: #888; font-size: 0.8em; }
+        .chart-box { height: 40vh; background: #1e1e1e; border-radius: 10px; padding: 10px; position: relative; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        input[type=range] { width: 100%; }
+    </style>
+</head>
+<body>
+
+    <!-- الرأس وزر الاتصال -->
+    <div class="header">
+        <div id="status">🔴 غير متصل</div>
+        <button class="btn" onclick="connectUSB()">🔗 اتصال بالجهاز (USB)</button>
+    </div>
+
+    <!-- قراءات الأرقام -->
+    <div class="readings">
+        <div class="box"><div class="val" id="s1">0</div><div class="label">الإشارة (S1)</div></div>
+        <div class="box"><div class="val" id="s2">0</div><div class="label">ضجيج (S2)</div></div>
+        <div class="box"><div class="val" id="s3">0</div><div class="label">تمييز (S3)</div></div>
+    </div>
+
+    <!-- الرسم البياني -->
+    <div class="chart-box">
+        <canvas id="chart"></canvas>
+    </div>
+
+    <!-- تحكم بسيط -->
+    <div class="controls">
+        <div class="box">
+            <div class="label">الحساسية</div>
+            <input type="range" min="1" max="100" onchange="sendCmd('G', this.value)">
+        </div>
+        <div class="box">
+            <div class="label">تأخير</div>
+            <input type="range" min="0" max="50" onchange="sendCmd('D', this.value)">
+        </div>
+    </div>
+
+    <script>
+        // --- تفعيل العمل بدون انترنت ---
+        if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
+
+        // --- المتغيرات ---
+        let port, writer;
+        const ctx = document.getElementById('chart').getContext('2d');
+        
+        // إعداد الرسم البياني
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(50).fill(''),
+                datasets: [{ label: 'Signal', data: Array(50).fill(0), borderColor: '#00e676', borderWidth: 2, tension: 0.4, pointRadius:0 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { x: {display:false}, y: {grid:{color:'#333'}} } }
+        });
+
+        // --- وظيفة الاتصال USB ---
+        async function connectUSB() {
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                document.getElementById('status').innerText = "🟢 متصل";
+                document.getElementById('status').style.color = "#00e676";
+                
+                // إعداد الكتابة للجهاز
+                const textEncoder = new TextEncoderStream();
+                const writableStreamClosed = textEncoder.readable.pipeTo(port.writable);
+                writer = textEncoder.writable.getWriter();
+
+                // القراءة من الجهاز
+                const textDecoder = new TextDecoderStream();
+                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                const reader = textDecoder.readable.getReader();
+
+                let buffer = "";
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += value;
+                    let lines = buffer.split('\n');
+                    buffer = lines.pop(); // حفظ الباقي
+                    for (let line of lines) processLine(line.trim());
+                }
+            } catch (err) {
+                alert("خطأ في الاتصال: " + err);
+            }
+        }
+
+        // --- معالجة البيانات ---
+        function processLine(line) {
+            // نتوقع صيغة: 100,200,300
+            let parts = line.split(',');
+            if (parts.length < 3) return;
+            
+            let val1 = parseInt(parts[0]);
+            let val2 = parseInt(parts[1]);
+            let val3 = parseInt(parts[2]);
+
+            // تحديث الشاشة
+            document.getElementById('s1').innerText = val1;
+            document.getElementById('s2').innerText = val2;
+            document.getElementById('s3').innerText = val3;
+
+            // تحديث الرسم البياني
+            chart.data.datasets[0].data.push(val1);
+            chart.data.datasets[0].data.shift();
+            chart.update('none'); // 'none' للأداء السريع
+        }
+
+        // --- إرسال أوامر للجهاز ---
+        async function sendCmd(char, val) {
+            if(writer) await writer.write(char + val + "\n");
+        }
+    </script>
+</body>
+</html>
